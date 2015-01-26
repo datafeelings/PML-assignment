@@ -1,0 +1,108 @@
+---
+title: "Machine Learning Assignment"
+output: html_document
+---
+
+The goal of this project is to predict the manner in which test subjects did a barbell exercise based on the measurements of accelerometers. 
+We are building a model to predict the values of the "classe" variable in the training set.  
+
+Later we'll use this prediction model to predict 20 different test cases. 
+
+####The process
+
+#####Step 1. 
+Read the training file and remove zero-variance variables
+```{r}
+training = read.csv("pml-training.csv")
+ set.seed(123)
+require(caret)
+```
+
+Now identify and remove all covariates with near zero variance.
+Exclude the outcome from the variance analysis, then add it back to the filtered set.
+
+```{r}
+covs = training [,-160]
+
+covsNZV=nearZeroVar(covs)
+notZVcovs= covs[, - covsNZV]
+
+trainingNotZV = cbind(training[,160], notZVcovs)
+names(trainingNotZV)[1] <- "classe"
+```
+The number of covariates has been reduced from 159 to 94.
+
+#####Step 2.
+Before analyzing the actually measured parameters of the exercises, it is important to control that the sample is not biased in terms of time or test subjects. In this case, even a simple visual analysis of the distribution of the outcome proves that the sample is not biased.
+
+```{r, echo=FALSE}
+qplot(cvtd_timestamp, classe, colour = user_name, data = trainingNotZV) + geom_jitter() + ggtitle ("Outcomes vs. Time and Test Subject")
+```
+
+Accordingly, we can remove the variables related to the observation number, test subject, and time:
+
+- "X" standing for observation id, 
+- "user_name"
+- "raw_timestamp_part_1"
+- "raw_timestamp_part_2"
+- "cvtd_timestamp"
+
+```{r, eval=FALSE}
+trainingNotZV = trainingNotZV [,-2:-6]
+```
+
+#####Step3.
+Prepare the training set.
+Now split the training sample into 2 parts for cross-validation purposes
+```{r, eval=FALSE}
+inTrain = createDataPartition(y=trainingNotZV$classe, p = 0.75, list = F)
+training = trainingNotZV[inTrain,]
+testing = trainingNotZV[-inTrain,]
+```
+
+We need to exclude the variables that are mostly incomplete. 
+```{r}
+trainingcomp = training[,colSums(is.na(training)) == 0]
+```
+The number of variables has been reduced to 53.
+
+Create preprocessing object to standardize observations, as a lot of values are around zero, and create a new traning set with standardized values:
+```{r, eval=FALSE}
+preObj = preProcess (trainingcomp [,-1])
+trainingcompS <- predict(preObj, trainingcomp [,-1])
+trainingcompS$classe = trainingcomp$classe
+```
+
+Generate principal components to further reduce the number of variables. I've tried several combinations (13 variables capture 80% of the variance) but my subsequent random forest function is running too slow if I have many components. So I'll take 6.
+```{r, eval=FALSE}
+pca <- preProcess(trainingcompS[,-53], method = "pca", pcaComp = 6)
+princomps = predict(pca, trainingcompS[,-53])
+princomps$classe = trainingcompS$classe
+```
+
+#####Step 4.
+Apply random forest to the training set.
+```{r, eval=FALSE}
+rf = train (classe ~ ., data=princomps, method = "rf")
+rf
+```
+Random Forest 
+
+14718 samples
+    6 predictor
+    5 classes: 'A', 'B', 'C', 'D', 'E' 
+
+No pre-processing
+Resampling: Bootstrapped (25 reps) 
+
+Summary of sample sizes: 14718, 14718, 14718, 14718, 14718, 14718, ... 
+
+Resampling results across tuning parameters:
+
+  mtry  Accuracy   Kappa      Accuracy SD  Kappa SD   
+  2     0.8668252  0.8314819  0.005105716  0.006462320
+  4     0.8584578  0.8208959  0.006280821  0.007963889
+  6     0.8454467  0.8044560  0.006425642  0.008128041
+
+Accuracy was used to select the optimal model using  the largest value.
+The final value used for the model was mtry = 2. 
